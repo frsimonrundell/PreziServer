@@ -1,0 +1,388 @@
+﻿AppType=JavaFX
+Build1=Default,b4j.example
+File1=CustomToast.bjl
+File2=frmAbout.bjl
+File3=frmSettings.bjl
+File4=smartphone-8-32.ico
+File5=smartphone-8-512.png
+FileGroup1=Default Group
+FileGroup2=Default Group
+FileGroup3=Default Group
+FileGroup4=Default Group
+FileGroup5=Default Group
+Group=Default Group
+Library1=jcore
+Library10=javaobject
+Library2=jfx
+Library3=jnetwork
+Library4=jrandomaccessfile
+Library5=jsystemtray
+Library6=db2000.b4j.ini
+Library7=jawtrobot
+Library8=jcustomtoast
+Library9=jmsgboxes
+NumberOfFiles=5
+NumberOfLibraries=10
+NumberOfModules=0
+Version=6.3
+@EndOfDesignText@
+#Region  Project Attributes 
+	#MainFormWidth: 640
+	#MainFormHeight: 320 
+#End Region
+
+Sub Process_Globals
+	Private fx As JFX
+	Private MainForm As Form
+	Private AboutForm As Form
+	Private SettingsForm As Form
+	Private server As ServerSocket
+    Private astream As AsyncStreams
+	Private tray As SystemTray
+	Private icon1 As TrayIcon
+	Private IconImage As Image
+	Private lblTitle As Label
+	Private pnl1 As Pane
+	Private lblIP As Label
+	Private txtIP As TextField
+	Private lblPort As Label
+	Private txtPort As TextField
+	Private btnSave As Button
+	Private srvIP  As String
+	Private srvPort As Int
+	Private WorkspacePath As String
+	Private btnClose As Button
+	Private INI As INI
+	Private MsgBox As Msgboxes
+	Private rbt As AWTRobot
+	Private countingStream As CountingInputStream
+	Private totalSizeForSending As Long
+	Public SendingFile As Boolean
+	Public progressValue As Int
+	Public progressText As String
+	Public Timer1 As Timer
+	Public chosenScreen As Int
+	Public refreshRate As Int
+	Private Toast As ToastMessageShow
+	Private strApp As String
+
+	Private lblScreen As Label
+	Private cbScreen As ChoiceBox
+	
+	Private MouseX, MouseY As Float
+	Private lblUpdateInterval As Label
+	Private cbRefresh As ChoiceBox
+	Private setInterval As Int
+End Sub
+
+Sub AppStart (Form1 As Form, Args() As String)
+	
+	IconImage = fx.LoadImage(File.DirAssets, "smartphone-8-512.png")
+	strApp = "Fr Simon's Remote Server"
+	MainForm = Form1
+	MainForm.RootPane.LoadLayout("CustomToast") 'Load the layout file.
+	MainForm.Initialize("CustomToast", 640, 320)
+    Toast.Initialize("Toast")
+    Toast.ToastIconSize32x32
+    Toast.ToastDuration = 3 '6 is usually Toast.TOAST_LONG_DELAY
+    Toast.ToastTextLocation = Toast.TEXT_CENTER
+    Toast.ToastLocation= Toast.TOAST_CENTER
+	Toast.ToastMessageColor=fx.Colors.White
+
+	Toast.ToastNotificationOwner = MainForm 'this declaration Important
+	
+	SettingsForm.Initialize("frmSettings", 640, 320)
+	SettingsForm.SetFormStyle("UNIFIED")
+	SettingsForm.RootPane.LoadLayout("frmSettings") 'Load the layout file.
+
+	cbScreen.Items.Add("Screen 1")
+	cbScreen.Items.Add("Screen 2")
+	cbScreen.Items.Add("Both Screens")
+	cbScreen.SelectedIndex=chosenScreen
+	
+	cbRefresh.Items.Add("2 Sec")
+	cbRefresh.Items.Add("1 sec")
+	cbRefresh.Items.Add("0.5 sec")
+	cbRefresh.SelectedIndex=refreshRate
+	
+	
+	AboutForm.Initialize("frmAbout", 640, 320)
+	AboutForm.SetFormStyle("UNIFIED")
+	AboutForm.RootPane.LoadLayout("frmAbout") 'Load the layout file.
+	
+	WorkspacePath=File.DirApp & "\"
+	Log("Config Path: " & WorkspacePath)
+	
+	If File.Exists(File.DirApp, "preziconfig.ini") Then
+		readConfig
+		txtPort.Text=srvPort
+		txtIP.Text=srvIP
+		cbScreen.SelectedIndex=chosenScreen
+		cbRefresh.SelectedIndex=refreshRate
+	Else
+		MsgBox.Show("Need to create configuration file on first run...", strApp)
+		txtIP.Text=server.GetMyIP
+		SettingsForm.Show	
+	End If
+	
+	' system tray
+	tray.Initialize
+	Dim MenuItems() As String = Array As String("Settings", "About", "Restart Server", "-", "Exit")
+	icon1.Initialize("icon1", IconImage, MenuItems)
+	icon1.ToolTip = strApp & ": Connect Remote to: " & txtIP.Text & " Port: " & txtPort.Text
+	tray.AddTrayIcon(icon1)
+	
+	Select Case chosenScreen
+		Case 0
+		 rbt.ScreenCurrentRectangleSetAsLeftScreen	
+		Case 1
+		 rbt.ScreenCurrentRectangleSetAsRightScreen	
+		Case 2
+		 rbt.ScreenCurrentRectangleSetAsAllScreens
+	End Select
+	
+	restartserver
+	
+    'StartMessageLoop
+End Sub
+
+'-----------------------------------------------------
+' Server
+'-----------------------------------------------------
+Sub restartserver()
+	'server	
+	If server.IsInitialized Then
+		server.Close
+		Log("RESTARTING")
+	End If
+	Log("Initialising server on IP " & srvIP & " Port " & srvPort & " refresh rate " & refreshRate)
+	
+Try	
+	Select Case chosenScreen
+		Case 0
+		 rbt.ScreenCurrentRectangleSetAsLeftScreen	
+		Case 1
+		 rbt.ScreenCurrentRectangleSetAsRightScreen	
+		Case 2
+		 rbt.ScreenCurrentRectangleSetAsAllScreens
+	End Select
+	server.Initialize(srvPort, "server")
+    server.Listen
+	Toast.ToastShow(strApp & " Running on IP " & srvIP & " Port " & srvPort & " Screen " & chosenScreen & " Refresh rate " & refreshRate)
+	
+	Select Case refreshRate
+		Case 0
+			setInterval=2000
+		Case 1
+			setInterval=1000
+		Case 2
+			setInterval=500
+	End Select
+	Timer1.Initialize("Timer1", setInterval) ' update every second
+	Timer1.Enabled=True
+Catch
+	Log(LastException.Message & " at " & DateTime.Now)
+	Toast.ToastShow("ERROR: " & LastException.Message & " Please restart Server App")
+End Try
+End Sub
+
+Sub server_NewConnection (Successful As Boolean, NewSocket As Socket)
+   Log("New connection established")
+   Toast.ToastShow(strApp & " Connected")
+   If Successful Then
+     astream.InitializePrefix(NewSocket.InputStream, True, NewSocket.OutputStream, "astream")
+   End If
+   server.Listen
+End Sub
+
+Sub astream_NewData (Buffer() As Byte)
+   Private keypress As String
+   keypress=BytesToString(Buffer, 0, Buffer.Length, "utf8")
+   Log(keypress & " received")
+
+
+
+   
+   If keypress.Contains(".")=True Then
+		MouseX=keypress.SubString2(1, keypress.IndexOf(","))
+		MouseY=keypress.SubString(keypress.IndexOf(",")+1)
+		rbt.RobotMouseMoveTo(MouseX, MouseY)
+		'Log("MouseX: " & MouseX & " MouseY: " & MouseY)
+	Else If keypress.Contains("v-")=True Then
+
+		Toast.ToastShow("Volume ought to be set to " & keypress)
+	
+	Else
+	   Select keypress
+	   		Case "*" ' button press
+				rbt.RobotMouseButtonPress(1)
+				rbt.RobotMouseButtonRelease(1)
+	   		Case "d" 'right button
+				rbt.RobotSpecialKeyPress("right_arrow")
+				rbt.RobotSpecialKeyRelease("right_arrow")
+				
+			Case "u"  ' left button
+				rbt.RobotSpecialKeyPress("left_arrow")
+				rbt.RobotSpecialKeyRelease("left_arrow")			
+			Case "o"  'Zoom In
+			rbt.RobotSpecialKeyPress("up_arrow")
+	 		rbt.RobotSpecialKeyRelease("up_arrow")			
+			Case "p"  ' Zoom Out
+				rbt.RobotSpecialKeyPress("down_arrow")
+				rbt.RobotSpecialKeyRelease("down_arrow")			
+			Case "b"  'Screen Blank
+				rbt.RobotKeyPress("b")
+				rbt.RobotKeyRelease("b")			
+			Case "f"  'Escape"
+				rbt.RobotSpecialKeyPress("escape")
+				rbt.RobotSpecialKeyRelease("escape")			
+			Case " "
+				rbt.RobotKeyPress("  ")
+				rbt.RobotKeyRelease(" ")
+	   End Select
+   End If
+   
+
+   	 
+End Sub
+'---------------------------------------------------------------
+' Timer and Screen Capture
+
+Sub Timer1_Tick
+	
+	' Log("Screenshot Taken")
+	   screenCapture
+	
+End Sub
+
+Sub screenCapture()
+   
+    	 Dim strFileName As String = "screenshot.png"
+         Dim strCurDir As String  = "./" 'this default to the objects dir of your java app or jar file
+   
+	 	 
+'	 'Capture current monitor screen
+      rbt.ScreenCaptureToFile(strCurDir & strFileName)
+      If File.Exists(strCurDir,strFileName) Then SendFile("./", "screenshot.png") 
+End Sub
+
+Sub SendFile(Dir As String, FileName As String)
+	Dim totalSizeForSending As Long = File.Size(Dir, FileName)
+	Dim In As InputStream = File.OpenInput(Dir, FileName)
+	countingStream.Initialize(In)
+	astream.Write(FileName.GetBytes("UTF8")) 'write the file name
+	astream.WriteStream(countingStream, totalSizeForSending)
+End Sub
+
+Private Sub astream_Terminated
+	Log("Connection Terminated")
+	Toast.ToastShow(strApp & " Connection Terminated")
+	astream.Close
+	Timer1.Enabled=False
+End Sub
+
+Private Sub astream_Error
+	Toast.ToastShow("Server Network Error: " & astream_Error)
+	astream_Terminated
+End Sub
+
+'--------------------------------------------------------
+' System Tray & UI
+'--------------------------------------------------------
+
+Sub Icon1_MenuClick (Text As String)
+	Select Text
+		Case "Settings"
+			txtIP.Text=server.GetMyIP
+			cbRefresh.SelectedIndex=refreshRate
+			cbScreen.SelectedIndex=chosenScreen
+			SettingsForm.Show
+		Case "About"
+			AboutForm.Show
+		Case "Restart Server"
+			astream.Close
+			Timer1.Enabled=False
+			restartserver
+		Case "Exit"
+			ExitApplication
+	End Select
+End Sub
+
+Sub btnSave_MouseClicked (EventData As MouseEvent)
+	writeConfig
+	chosenScreen=cbScreen.SelectedIndex
+	refreshRate=cbRefresh.SelectedIndex
+	SettingsForm.Close
+	Select Case chosenScreen
+		Case 0
+		 rbt.ScreenCurrentRectangleSetAsLeftScreen	
+		Case 1
+		 rbt.ScreenCurrentRectangleSetAsRightScreen	
+		Case 2
+		 rbt.ScreenCurrentRectangleSetAsAllScreens
+	End Select
+	restartserver	
+End Sub
+
+Sub btnClose_MouseClicked (EventData As MouseEvent)
+	AboutForm.Close
+End Sub
+
+'---------------------------------------------------------
+' Configuration
+'---------------------------------------------------------
+Sub writeConfig()
+	' write data:
+	INI.SetFileName(WorkspacePath & "preziconfig.ini")	
+	INI.wrNewSection("DATA", "Server Configuration")
+	INI.wrString("DATA", "IP", txtIP.Text, "")	
+	INI.wrString("DATA", "Port", txtPort.Text, "")
+	INI.wrInteger("DATA", "Screen", chosenScreen, "")	
+	INI.wrInteger("DATA", "Refresh", refreshRate, "")		'
+	INI.UpDate
+	Toast.ToastShow(strApp & " Configuration Updated")
+	Select Case chosenScreen
+		Case 0
+		 rbt.ScreenCurrentRectangleSetAsLeftScreen	
+		Case 1
+		 rbt.ScreenCurrentRectangleSetAsRightScreen	
+		Case 2
+		 rbt.ScreenCurrentRectangleSetAsAllScreens
+	End Select
+	Select Case refreshRate
+		Case 0
+			setInterval=2000
+		Case 1
+			setInterval=1000
+		Case 2
+			setInterval=500
+	End Select
+	restartserver
+End Sub
+
+Sub readConfig()
+	' read data:
+	INI.SetFileName(WorkspacePath & "preziconfig.ini")
+	srvIP=INI.rdString("DATA", "IP")
+	srvPort=INI.rdString("DATA", "Port")
+	chosenScreen=INI.rdInteger("DATA", "Screen")
+	refreshRate=INI.rdInteger("DATA", "Refresh")
+	Log("Server " & srvIP & " Port "  & srvPort & " Screen " & chosenScreen)
+	Select Case chosenScreen
+		Case 0
+		 rbt.ScreenCurrentRectangleSetAsLeftScreen	
+		Case 1
+		 rbt.ScreenCurrentRectangleSetAsRightScreen	
+		Case 2
+		 rbt.ScreenCurrentRectangleSetAsAllScreens
+	End Select
+	Select Case refreshRate
+		Case 0
+			setInterval=2000
+		Case 1
+			setInterval=1000
+		Case 2
+			setInterval=500
+	End Select
+End Sub
+	
